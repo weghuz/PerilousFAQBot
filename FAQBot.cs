@@ -6,6 +6,11 @@ using Microsoft.Extensions.Configuration;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
+using System.Drawing;
+using Color = Discord.Color;
+using static System.Net.Mime.MediaTypeNames;
+using System.Reactive.Disposables;
+using System.Reflection.Metadata.Ecma335;
 
 namespace FAQBot
 {
@@ -111,26 +116,45 @@ namespace FAQBot
 
         private async Task LackeyListCommand(SocketSlashCommand command)
         {
-            var embed = new EmbedBuilder
+            var embeds = new List<Embed>();
+            embeds.Add(new EmbedBuilder()
             {
                 Title = $"Lackey applicants",
                 Description = $"Scallywags that applied to be approved for the role of Lackey.\nApplications have 24 hours to get approved by True Pirates.",
-                Color = Color.Orange
-            };
+                Color = Color.Blue
+            }.Build());
             var applications = await _db.LackeyApplications
                 .Include(app => app.Approvals)
                 .ToListAsync();
-            foreach(var app in applications)
+            bool old = false;
+            if (command.Data.Options.FirstOrDefault(op => op.Name == "old")?.Value is not null)
+                old = bool.Parse(command.Data.Options.FirstOrDefault(op => op.Name == "old")?.Value.ToString());
+            foreach (var app in applications.Where(a => (old is false && IsLackeyApplicationPending(a)) || old))
             {
                 StringBuilder approvals = new();
-                foreach(var approval in app.Approvals)
+                foreach (var approval in app.Approvals)
                 {
                     approvals.Append($"<@{approval.ApproverId}>, ");
                 }
-                embed.AddField($"#{app.Id}", $"Applicant: <@{app.ApplicantId}>\nApprovals: {app.Approvals.Count}/3\nApproved by {approvals}", true);
+                embeds.Add(new EmbedBuilder()
+                {
+                    Title = $"#{app.Id} {(IsLackeyApplicationApproved(app) ? "Approved!" : IsLackeyApplicationPending(app) ? $"Pending approval, closing <t:{(int)app.ApplicationTime.AddDays(1).Subtract(new DateTime(1970, 1, 1)).TotalSeconds}:R>!" : "Unapproved!")}",
+                    Description = $"Applicant: <@{app.ApplicantId}>\nApprovals: {app.Approvals.Count}/3\nApproved by {approvals}",
+                    Color = (IsLackeyApplicationApproved(app) ? Color.Green : IsLackeyApplicationPending(app) ? Color.Blue : Color.Red)
+                }.Build());
             }
 
-            await command.RespondAsync(embed: embed.Build(), ephemeral: IsCommandEphemeral(command.Data.Options));
+            await command.RespondAsync(embeds: embeds.ToArray(), ephemeral: IsCommandEphemeral(command.Data.Options));
+        }
+
+        private static bool IsLackeyApplicationPending(LackeyApplication app)
+        {
+            return app.ApplicationTime >= DateTime.UtcNow.AddDays(-1);
+        }
+
+        private static bool IsLackeyApplicationApproved(LackeyApplication app)
+        {
+            return app.Approvals.Where(a => a.TimeStamp >= app.ApplicationTime.AddDays(-1)).Count() > 3;
         }
 
         private async Task LackeyApproveCommand(SocketSlashCommand command)
@@ -153,12 +177,47 @@ namespace FAQBot
                     await command.RespondAsync($"**No cheating!**\nYou've already approved this application.", ephemeral: IsCommandEphemeral(command.Data.Options));
                     return;
                 }
+                if (application.ApplicationTime <= DateTime.UtcNow.AddDays(-1))
+                {
+                    await command.RespondAsync($"You're out of thyme.");
+                    return;
+                }
                 application.Approvals.Add(new()
                 {
                     ApproverId = command.User.Id,
                     TimeStamp = DateTime.UtcNow,
                 });
-                await command.RespondAsync($"Approved application #{applicationId}.\nApplication is now at {application.Approvals.Count}/3 approvals.", ephemeral: IsCommandEphemeral(command.Data.Options));
+                List<Embed> embeds = new()
+                {
+                    new EmbedBuilder()
+                    {
+                        Title = $"Approved!",
+                        Description = $"<@{command.User.Id}> approved of <@{application.ApplicantId}>!",
+                        Color = Color.Green
+                    }.Build()
+                    
+                };
+                if(IsLackeyApplicationApproved(application))
+                {
+                    var guildApplicant = (await _client.GetUserAsync(application.ApplicantId) as IGuildUser);
+                    await guildApplicant.AddRoleAsync(ROLE_LACKEY_ID);
+                    embeds.Add(new EmbedBuilder()
+                    {
+                        Title = $"Welcome to the Lackeys <@{application.ApplicantId}>",
+                        Description = $"You're now one step closer to becoming a TRUE pirate.\nKeep going!",
+                        ImageUrl = $"https://media.discordapp.net/attachments/1018925222449135718/1038813955780530218/unknown.png?width=1183&height=676"
+                    }.Build());
+                }
+                else
+                {
+                    embeds.Add(new EmbedBuilder()
+                    {
+                        Title = $"#{application.Id} {(IsLackeyApplicationApproved(application) ? "Approved!" : IsLackeyApplicationPending(application) ? $"Pending approval, closing <t:{(int)application.ApplicationTime.AddDays(1).Subtract(new DateTime(1970, 1, 1)).TotalSeconds}:R>!" : "Unapproved!")}",
+                        Description = $"Applicant: <@{application.ApplicantId}>\nApprovals: {application.Approvals.Count}/3\nApproved by {application.Approvals}",
+                        Color = (IsLackeyApplicationApproved(application) ? Color.Green : IsLackeyApplicationPending(application) ? Color.Blue : Color.Red)
+                    }.Build());
+                }
+                await command.RespondAsync(embeds: embeds.ToArray(), ephemeral: IsCommandEphemeral(command.Data.Options));
                 await _db.SaveChangesAsync();
             }
             else
@@ -476,7 +535,7 @@ namespace FAQBot
 
         private async Task InitiateSlashCommands()
         {
-            var piratesGuild = _client.GetGuild((ulong)940071768679395369);
+            var piratesGuild = _client.GetGuild(940071768679395369);
             var commands = await _client.GetGlobalApplicationCommandsAsync();
             foreach(var command in commands)
             {
@@ -492,21 +551,19 @@ namespace FAQBot
             guildCommand.WithName("lackeyjoin");
             guildCommand.WithDescription("Apply to be a pirate Lackey.");
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+
             guildCommand = new SlashCommandBuilder();
             guildCommand.WithName("lackeylist");
             guildCommand.WithDescription("List of lackey applications.");
+            guildCommand.AddOption("old", ApplicationCommandOptionType.Boolean, "Show old applications", false);
             guildCommand.AddOption("hidden", ApplicationCommandOptionType.Boolean, "Set False to show publicly. True by default.", false);
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+
             guildCommand = new SlashCommandBuilder();
             guildCommand.WithName("lackeyapprove");
             guildCommand.WithDescription("(TRUE PIRATE) Approve a lackey applicant.");
-            guildCommand.AddOption(new()
-            {
-                Name = "id",
-                Description = $"The id of the application to approve. Use /lackeylist to find the id.",
-                IsRequired = true,
-                Type = ApplicationCommandOptionType.String,
-            });
+            guildCommand.AddOption("id", ApplicationCommandOptionType.String, $"The id of the application to approve. Use /lackeylist to find the id.", true);
+            guildCommand.AddOption("hidden", ApplicationCommandOptionType.Boolean, "Set False to show publicly. True by default.", false);
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
 
             guildCommand = new SlashCommandBuilder();
@@ -600,6 +657,7 @@ namespace FAQBot
                 }
             });
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+
             guildCommand = new SlashCommandBuilder();
             guildCommand.WithName("faqedittag");
             guildCommand.WithDescription("(TRUE PIRATE) Edit a FAQ Tag.");
@@ -628,6 +686,7 @@ namespace FAQBot
                 }
             });
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+
             guildCommand = new SlashCommandBuilder();
             guildCommand.WithName("faqedit");
             guildCommand.WithDescription("(TRUE PIRATE) Edit a FAQ.");
