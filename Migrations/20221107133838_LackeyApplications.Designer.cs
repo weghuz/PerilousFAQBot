@@ -3,6 +3,7 @@ using System;
 using FAQBot.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FAQBot.Migrations
 {
     [DbContext(typeof(FAQDB))]
-    partial class FAQDBModelSnapshot : ModelSnapshot
+    [Migration("20221107133838_LackeyApplications")]
+    partial class LackeyApplications
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -95,18 +97,18 @@ namespace FAQBot.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("ApplicationId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("ApproverId")
+                    b.Property<decimal>("Approver")
                         .HasColumnType("numeric(20,0)");
+
+                    b.Property<int?>("LackeyApplicationId")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("TimeStamp")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ApplicationId");
+                    b.HasIndex("LackeyApplicationId");
 
                     b.ToTable("LackeyApprovals");
                 });
@@ -124,13 +126,9 @@ namespace FAQBot.Migrations
 
             modelBuilder.Entity("FAQBot.Models.LackeyApproval", b =>
                 {
-                    b.HasOne("FAQBot.Models.LackeyApplication", "Application")
+                    b.HasOne("FAQBot.Models.LackeyApplication", null)
                         .WithMany("Approvals")
-                        .HasForeignKey("ApplicationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Application");
+                        .HasForeignKey("LackeyApplicationId");
                 });
 
             modelBuilder.Entity("FAQBot.Models.FAQEntry", b =>

@@ -9,6 +9,8 @@ namespace FAQBot.Models
 
         public DbSet<FAQEntry> FAQs { get; set; }
         public DbSet<FAQTag> FAQsTags { get; set; }
+        public DbSet<LackeyApplication> LackeyApplications { get; set; }
+        public DbSet<LackeyApproval> LackeyApprovals { get; set; }
 
         public FAQDB(IConfiguration config)
         {
