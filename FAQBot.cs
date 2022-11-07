@@ -57,7 +57,7 @@ namespace FAQBot
 
             if (msg.Content.Contains(_client.CurrentUser.Mention.Replace("!", "")))
             {
-                await msg.ReplyAsync("This is a FAQ Bot! \n to know more execute the /faq command");
+                await msg.ReplyAsync("This is a FAQ Bot! \n to know more execute the /faqhelp command");
             }
         }
 
@@ -67,29 +67,56 @@ namespace FAQBot
             {
                 switch (command.CommandName)
                 {
-                    case "faq-help":
+                    case "faqhelp":
                         await FAQHelpCommand(command);
                         break;
                     case "faq":
                         await FAQCommand(command);
                         break;
-                    case "faq-list":
+                    case "faqlist":
                         await FAQListCommand(command);
                         break;
-                    case "faq-add":
+                    case "faqadd":
                         await FAQAddCommand(command);
                         break;
-                    case "faq-add-tag":
+                    case "faqedit":
+                        await FAQEditCommand(command);
+                        break;
+                    case "faqaddtag":
                         await FAQAddTagCommand(command);
                         break;
+                    case "faqedittag":
+                        await FAQEditTagCommand(command);
+                        break;
                     default:
-                        await command.RespondAsync($"{command.CommandName} is not implemented yet.");
+                        await command.RespondAsync($"{command.CommandName} is not implemented yet.", ephemeral: true);
                         break;
                 }
             }
             catch(Exception e)
             {
                 Console.WriteLine(e.ToString());
+            }
+        }
+
+        private async Task FAQEditTagCommand(SocketSlashCommand command)
+        {
+            if (await IsTruePirateAsync(command) is false)
+                return;
+            if (int.TryParse(command.Data.Options.FirstOrDefault(op => op.Name == "id")?.Value.ToString(), out int tagId))
+            {
+                string tag = command.Data.Options.FirstOrDefault(op => op.Name == "tag")?.Value.ToString();
+                var oldTag = await _db.FAQsTags
+                    .Where(f => f.Id == tagId)
+                    .FirstOrDefaultAsync();
+                string oldTagTag = oldTag.Tag;
+                oldTag.Tag = tag;
+                await _db.SaveChangesAsync();
+                await command.RespondAsync($"Changed Tag #{tagId} from {oldTagTag} to {tag}.", ephemeral: IsCommandEphemeral(command.Data.Options));
+            }
+            else
+            {
+                await command.RespondAsync($"Couldn't find FAQ.", ephemeral: true);
             }
         }
 
@@ -106,23 +133,46 @@ namespace FAQBot
                     .FirstOrDefaultAsync();
                 faq.Tags.Add(new FAQTag() { Tag = tag });
                 await _db.SaveChangesAsync();
-                await command.RespondAsync($"Added Tag {tag} to FAQ Entry #{faq.Id} {faq.Name}.");
+                await command.RespondAsync($"Added Tag {tag} to FAQ Entry #{faq.Id} {faq.Name}.", ephemeral: IsCommandEphemeral(command.Data.Options));
             }
             else
             {
-                await command.RespondAsync($"Couldn't find FAQ.");
+                await command.RespondAsync($"Couldn't find FAQ.", ephemeral: true);
             }
         }
+
         private async Task FAQHelpCommand(SocketSlashCommand command)
         {
-            await command.RespondAsync($"The FAQ bot was built by the Perilous Pirates guild member WegHuZ.\n" +
-                $"\\Commands are:\n" +
-                $"\\faq\n" +
-                $"\\faq-help\n" +
-                $"\\faq-list\n" +
-                $"(TRUE PIRATE)\\faq-add\n" +
-                $"(TRUE PIRATE)\\faq-edit\n" +
-                $"(TRUE PIRATE)\\faq-add-tag");
+            var embed = new EmbedBuilder
+            {
+                Title = $"Perilous Pirates FAQ Bot",
+                Description = $"The FAQ bot lists FAQ entries related to DeFi Kingdoms in a database.\n" +
+                $"FAQ entries get served to users through the /faq command.\n" +
+                $"Depending on what you enter with the command you get served a relevant FAQ entry to hopefully answer your questions."
+            };
+            embed.AddField($"1", $"faq", true);
+            embed.AddField($"2", $"faqhelp", true);
+            embed.AddField($"3", $"faqlist", true);
+            embed.AddField($"4 (TRUE PIRATE)", $"faqadd", true);
+            embed.AddField($"5 (TRUE PIRATE)", $"faqedit", true);
+            embed.AddField($"6 (TRUE PIRATE)", $"faqaddtag", true);
+
+            await command.RespondAsync(embed: embed.Build(), ephemeral: IsCommandEphemeral(command.Data.Options));
+        }
+
+        private bool IsCommandEphemeral(IReadOnlyCollection<SocketSlashCommandDataOption> options)
+        {
+            string ephemeral = options.FirstOrDefault(op => op.Name == "hidden")?.Value.ToString();
+            if (ephemeral is null)
+                return true;
+            if (bool.TryParse(ephemeral, out bool result))
+            {
+                return result;
+            }
+            else
+            {
+                return true;
+            }
         }
 
         private async Task<bool> IsTruePirateAsync(SocketSlashCommand command)
@@ -131,16 +181,82 @@ namespace FAQBot
             var piratesUser = piratesGuild.Users.FirstOrDefault(user => user.Id == command.User.Id);
             if (piratesUser == null)
             {
-                await command.RespondAsync($"Couldn't find user.");
+                await command.RespondAsync($"Couldn't find user.", ephemeral: true);
                 return false;
             };
             bool allowed = piratesUser.Roles.Any(role => role.Id == ROLE_TRUE_PIRATE_ID);
 
             if (allowed is false)
             {
-                await command.RespondAsync($"You're not a TRUE pirate.");
+                await command.RespondAsync($"You're not a TRUE pirate.", ephemeral: true);
             };
             return allowed;
+        }
+
+        private async Task FAQEditCommand(SocketSlashCommand command)
+        {
+            if (await IsTruePirateAsync(command) is false)
+                return;
+            try
+            {
+                var subCommand = command.Data.Options.First();
+                string id = subCommand.Options.FirstOrDefault(op => op.Name == "id")?.Value.ToString();
+
+                var oldFaq = await _db.FAQs
+                    .Include(faq => faq.Tags)
+                    .FirstOrDefaultAsync(faq => faq.Id == int.Parse(id));
+                if (oldFaq is null)
+                {
+                    await command.RespondAsync($"Couldn't find the faq with ID:{id}.\n", ephemeral: true);
+                }
+                switch (subCommand.Name)
+                {
+                    case "name":
+                        string name = subCommand.Options.FirstOrDefault(op => op.Name == "name")?.Value.ToString();
+                        var oldName = oldFaq.Name;
+                        oldFaq.Name = name;
+                        await _db.SaveChangesAsync();
+                        await command.RespondAsync($"Edited description of FAQ #{id} from {oldName} to {name}.", ephemeral: IsCommandEphemeral(subCommand.Options));
+                        break;
+                    case "description":
+                        string desc = subCommand.Options.FirstOrDefault(op => op.Name == "description")?.Value.ToString();
+                        var oldDesc = oldFaq.Description;
+                        oldFaq.Description = desc;
+                        await _db.SaveChangesAsync();
+                        await command.RespondAsync($"Edited description of FAQ #{id} from {oldDesc} to {desc}.", ephemeral: IsCommandEphemeral(subCommand.Options));
+                        break;
+                    case "link":
+                        string link = subCommand.Options.FirstOrDefault(op => op.Name == "link")?.Value.ToString();
+                        var oldLink = oldFaq.Link;
+                        oldFaq.Link = link;
+                        await _db.SaveChangesAsync();
+                        await command.RespondAsync($"Edited link of FAQ #{id} from {oldLink} to {link}.", ephemeral: IsCommandEphemeral(subCommand.Options));
+                        break;
+                    case "image":
+                        string image = subCommand.Options.FirstOrDefault(op => op.Name == "image")?.Value.ToString();
+                        var oldImage = oldFaq.Image;
+                        oldFaq.Image = image;
+                        await _db.SaveChangesAsync();
+                        await command.RespondAsync($"Edited Image of FAQ #{id} from {oldImage} to {image}.", ephemeral: IsCommandEphemeral(subCommand.Options));
+                        break;
+                    case "tags":
+                        string tags = subCommand.Options.FirstOrDefault(op => op.Name == "tags")?.Value.ToString();
+                        List<FAQTag> FAQTags = new();
+                        foreach (string tag in tags.Split(','))
+                        {
+                            FAQTags.Add(new() { Tag = tag.Trim() });
+                        }
+                        oldFaq.Tags = FAQTags;
+                        await _db.SaveChangesAsync();
+                        await command.RespondAsync($"Removed old tags and added new tags of FAQ #{id}.", ephemeral: IsCommandEphemeral(command.Data.Options));
+                        break;
+                }
+            }
+            catch
+            {
+                await command.RespondAsync($"Tried to edit FAQ but failed.\n", ephemeral: true);
+                Console.WriteLine($"Tried to edit FAQ but failed.\n");
+            }
         }
 
         private async Task FAQAddCommand(SocketSlashCommand command)
@@ -162,29 +278,33 @@ namespace FAQBot
                 var faq = new FAQEntry(name, link, image, desc, FAQTags);
                 await _db.AddAsync(faq);
                 await _db.SaveChangesAsync();
-                await command.RespondAsync($"Added FAQ Entry #{faq.Id}:\n**[{faq.Name}]({faq.Link})**:\n{faq.Description}\n[Image]({faq.Image})");
+                await command.RespondAsync($"Added FAQ Entry #{faq.Id}:\n**[{faq.Name}]({faq.Link})**:\n{faq.Description}\n[Image]({faq.Image})", ephemeral: IsCommandEphemeral(command.Data.Options));
                 _faq.Add(faq);
             }
-            catch(Exception e)
+            catch
             {
-                await command.RespondAsync($"Tried to Add FAQ but failed with error: {e.Message}\n");
-                Console.WriteLine($"Tried to Add FAQ but failed with error: {e.Message}\n");
+                await command.RespondAsync($"Tried to Add FAQ but failed.\n", ephemeral: true);
+                Console.WriteLine($"Tried to Add FAQ but failed.\n");
             }
         }
 
         private async Task FAQListCommand(SocketSlashCommand command)
         {
-            StringBuilder msg = new();
-            foreach(FAQEntry faq in _faq)
+            var embed = new EmbedBuilder
             {
-                msg.Append($"Faq {faq.Id}: {faq.Name}\n");
-                foreach(FAQTag tag in faq.Tags)
+                Title = $"Available FAQ entries.",
+            };
+            foreach (FAQEntry faq in _faq)
+            {
+                StringBuilder tags = new();
+                foreach (FAQTag tag in faq.Tags)
                 {
-                    msg.Append($"\tTag {tag.Id}: {tag.Tag}\n");
+                    tags.AppendLine($"{tag.Id}: {tag.Tag}");
                 }
-                msg.Append("\n");
+                embed.AddField($"{faq.Id}: {faq.Name}", $"Tags ({faq.Tags.Count})\n{tags}", true);
+
             }
-            await command.RespondAsync(msg.ToString());
+            await command.RespondAsync(embed: embed.Build(), ephemeral: IsCommandEphemeral(command.Data.Options));
         }
 
         private async Task FAQCommand(SocketSlashCommand command)
@@ -197,11 +317,11 @@ namespace FAQBot
             var faq = _faq.FirstOrDefault(faq => faq.Tags.Any(tag => tag.Tag.ToLower().Contains(data.ToString()!.ToLower())));
             if (faq is not null)
             {
-                await command.RespondAsync($"**[{faq.Name}]({faq.Link})**:\n{faq.Description}\n[Image]({faq.Image})");
+                await command.RespondAsync($"**[{faq.Name}]({faq.Link})**:\n{faq.Description}\n[Image]({faq.Image})", ephemeral: IsCommandEphemeral(command.Data.Options));
             }
             else
             {
-                await command.RespondAsync($"FAQ entry not found!");
+                await command.RespondAsync($"FAQ entry not found!", ephemeral: true);
             }
         }
 
@@ -214,23 +334,26 @@ namespace FAQBot
                 await command.DeleteAsync();
             }
             var guildCommand = new SlashCommandBuilder();
-            guildCommand.WithName("faq-help");
+            guildCommand.WithName("faqhelp");
             guildCommand.WithDescription("What is the FAQ Bot?");
+            guildCommand.AddOption("hidden", ApplicationCommandOptionType.Boolean, "Set False to show publicly. True by default.", false);
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
 
             guildCommand = new SlashCommandBuilder();
-            guildCommand.WithName("faq-list");
+            guildCommand.WithName("faqlist");
             guildCommand.WithDescription("List all FAQs.");
+            guildCommand.AddOption("hidden", ApplicationCommandOptionType.Boolean, "Set False to show publicly. True by default.", false);
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
 
             guildCommand = new SlashCommandBuilder();
             guildCommand.WithName("faq");
             guildCommand.WithDescription("Search the FAQ with a tag.");
             guildCommand.AddOption("data", ApplicationCommandOptionType.String, "The data to look for in the FAQ database.", true);
+            guildCommand.AddOption("hidden", ApplicationCommandOptionType.Boolean, "Set False to show publicly. True by default.", false);
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
 
             guildCommand = new SlashCommandBuilder();
-            guildCommand.WithName("faq-add");
+            guildCommand.WithName("faqadd");
             guildCommand.WithDescription("(TRUE PIRATE) Add a new FAQ entry.");
             guildCommand.AddOptions(new SlashCommandOptionBuilder[]
             {
@@ -268,12 +391,19 @@ namespace FAQBot
                     Description = "Comma separated tags for example: \"Hero, Heroes, Class\"",
                     Type = ApplicationCommandOptionType.String,
                     IsRequired = true,
+                },
+                new()
+                {
+                    Name = "hidden",
+                    Description = "Set False to show publicly. True by default.",
+                    Type = ApplicationCommandOptionType.Boolean,
+                    IsRequired = false,
                 }
             });
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
 
             guildCommand = new SlashCommandBuilder();
-            guildCommand.WithName("faq-add-tag");
+            guildCommand.WithName("faqaddtag");
             guildCommand.WithDescription("(TRUE PIRATE) Add a FAQ Tag.");
             guildCommand.AddOptions(new SlashCommandOptionBuilder[]
             {
@@ -291,54 +421,197 @@ namespace FAQBot
                     Type = ApplicationCommandOptionType.String,
                     IsRequired = true,
                 },
+                new()
+                {
+                    Name = "hidden",
+                    Description = "Set False to show publicly. True by default.",
+                    Type = ApplicationCommandOptionType.Boolean,
+                    IsRequired = false,
+                }
             });
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
             guildCommand = new SlashCommandBuilder();
-            guildCommand.WithName("faq-edit");
-            guildCommand.WithDescription("(TRUE PIRATE) Edit a FAQ.");
+            guildCommand.WithName("faqedittag");
+            guildCommand.WithDescription("(TRUE PIRATE) Edit a FAQ Tag.");
             guildCommand.AddOptions(new SlashCommandOptionBuilder[]
             {
                 new()
                 {
                     Name = "id",
                     Description = "Id of the FAQ to edit.",
+                    Type = ApplicationCommandOptionType.Integer,
+                    IsRequired = true,
+                },
+                new()
+                {
+                    Name = "tag",
+                    Description = "The new tag.",
                     Type = ApplicationCommandOptionType.String,
                     IsRequired = true,
                 },
                 new()
                 {
+                    Name = "hidden",
+                    Description = "Set False to show publicly. True by default.",
+                    Type = ApplicationCommandOptionType.Boolean,
+                    IsRequired = false,
+                }
+            });
+            await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+            guildCommand = new SlashCommandBuilder();
+            guildCommand.WithName("faqedit");
+            guildCommand.WithDescription("(TRUE PIRATE) Edit a FAQ.");
+            guildCommand.AddOptions(new SlashCommandOptionBuilder[]
+            {
+                new()
+                {
                     Name = "name",
-                    Description = "The name of the FAQ Entry.",
-                    Type = ApplicationCommandOptionType.String,
-                    IsRequired = true,
+                    Description = "Change the name of the FAQ Entry.",
+                    Type = ApplicationCommandOptionType.SubCommand,
+                    Options = new List<SlashCommandOptionBuilder>
+                    {
+                        new()
+                        {
+                            Name = "id",
+                            Description = "Id of the FAQ to edit.",
+                            Type = ApplicationCommandOptionType.Integer,
+                            IsRequired = true,
+                        },
+                        new()
+                        {
+                            Name = "name",
+                            Description = "The name to change to.",
+                            Type = ApplicationCommandOptionType.String,
+                            IsRequired = true
+                        },
+                        new()
+                        {
+                            Name = "hidden",
+                            Description = "Set False to show publicly. True by default.",
+                            Type = ApplicationCommandOptionType.Boolean,
+                            IsRequired = false,
+                        }
+                    }
                 },
                 new()
                 {
                     Name = "description",
-                    Description = "The Description of the FAQ Entry.",
-                    Type = ApplicationCommandOptionType.String,
-                    IsRequired = true,
+                    Description = "Change the Description of the FAQ Entry.",
+                    Type = ApplicationCommandOptionType.SubCommand,
+                    Options = new List<SlashCommandOptionBuilder>
+                    {
+                        new()
+                        {
+                            Name = "id",
+                            Description = "Id of the FAQ to edit.",
+                            Type = ApplicationCommandOptionType.Integer,
+                            IsRequired = true,
+                        },
+                        new()
+                        {
+                            Name = "description",
+                            Description = "The Description to change to.",
+                            Type = ApplicationCommandOptionType.String,
+                            IsRequired = true
+                        },
+                        new()
+                        {
+                            Name = "hidden",
+                            Description = "Set False to show publicly. True by default.",
+                            Type = ApplicationCommandOptionType.Boolean,
+                            IsRequired = false,
+                        }
+                    }
                 },
                 new()
                 {
                     Name = "link",
-                    Description = "A link to elaborate on the FAQ Entry.",
-                    Type = ApplicationCommandOptionType.String,
-                    IsRequired = false,
+                    Description = "Change the link of the FAQ Entry.",
+                    Type = ApplicationCommandOptionType.SubCommand,
+                    Options = new List<SlashCommandOptionBuilder>
+                    {
+                        new()
+                        {
+                            Name = "id",
+                            Description = "Id of the FAQ to edit.",
+                            Type = ApplicationCommandOptionType.Integer,
+                            IsRequired = true,
+                        },
+                        new()
+                        {
+                            Name = "link",
+                            Description = "The Description to change to.",
+                            Type = ApplicationCommandOptionType.String,
+                            IsRequired = true
+                        },
+                        new()
+                        {
+                            Name = "hidden",
+                            Description = "Set False to show publicly. True by default.",
+                            Type = ApplicationCommandOptionType.Boolean,
+                            IsRequired = false,
+                        }
+                    }
                 },
                 new()
                 {
                     Name = "image",
-                    Description = "A URI to an image for the FAQ.",
-                    Type = ApplicationCommandOptionType.String,
-                    IsRequired = true,
+                    Description = "Change the URI to the FAQ Image.",
+                    Type = ApplicationCommandOptionType.SubCommand,
+                    Options = new List<SlashCommandOptionBuilder>
+                    {
+                        new()
+                        {
+                            Name = "id",
+                            Description = "Id of the FAQ to edit.",
+                            Type = ApplicationCommandOptionType.Integer,
+                            IsRequired = true,
+                        },
+                        new()
+                        {
+                            Name = "image",
+                            Description = "The image URI to change to.",
+                            Type = ApplicationCommandOptionType.String,
+                            IsRequired = true
+                        },
+                        new()
+                        {
+                            Name = "hidden",
+                            Description = "Set False to show publicly. True by default.",
+                            Type = ApplicationCommandOptionType.Boolean,
+                            IsRequired = false,
+                        }
+                    }
                 },
                 new()
                 {
                     Name = "tags",
-                    Description = "Comma separated tags for example: \"Hero, Heroes, Class\"",
-                    Type = ApplicationCommandOptionType.String,
-                    IsRequired = true,
+                    Description = "Change the tags for a FAQ.",
+                    Type = ApplicationCommandOptionType.SubCommand,
+                    Options = new List<SlashCommandOptionBuilder>
+                    {
+                        new()
+                        {
+                            Name = "id",
+                            Description = "Id of the FAQ to edit.",
+                            Type = ApplicationCommandOptionType.Integer,
+                            IsRequired = true,
+                        },
+                        new()
+                        {
+                            Name = "tags",
+                            Description = "The tags to replace the FAQs tags with.",
+                            Type = ApplicationCommandOptionType.String,
+                            IsRequired = true
+                        },
+                        new()
+                        {
+                            Name = "hidden",
+                            Description = "Set False to show publicly. True by default.",
+                            Type = ApplicationCommandOptionType.Boolean,
+                            IsRequired = false,
+                        }
+                    }
                 }
             });
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
@@ -354,8 +627,6 @@ namespace FAQBot
             }
             else
                 Console.WriteLine($"[General/{message.Severity}] {message}");
-            if (message.Message == "Ready")
-                Console.WriteLine("To input new FAQ entries hit enter.");
             return Task.CompletedTask;
         }
     }
