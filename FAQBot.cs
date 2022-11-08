@@ -11,6 +11,7 @@ using Color = Discord.Color;
 using static System.Net.Mime.MediaTypeNames;
 using System.Reactive.Disposables;
 using System.Reflection.Metadata.Ecma335;
+using System;
 
 namespace FAQBot
 {
@@ -22,7 +23,9 @@ namespace FAQBot
         private readonly IConfiguration _config;
         private const ulong ROLE_TRUE_PIRATE_ID = 968880274517655612;
         private const ulong ROLE_LACKEY_ID = 1038517985503100948;
+        private const ulong ROLE_SCALLYWAG_ID = 940073182042411068;
         private const ulong PIRATES_GUILD_ID = 940071768679395369;
+        private const ulong GENERAL_CHANNEL_ID = 940071768679395371;
         private List<FAQEntry> _faq;
 
         public FAQBot(IConfiguration config, FAQDB db)
@@ -30,7 +33,7 @@ namespace FAQBot
             _db = db;
             _config = config;
             _faq = new();
-            _client = new DiscordSocketClient(new DiscordSocketConfig { MessageCacheSize = 100 });
+            _client = new DiscordSocketClient(new DiscordSocketConfig { MessageCacheSize = 100, GatewayIntents = GatewayIntents.All });
             _commands = new CommandHandler(_client, new CommandService(new CommandServiceConfig() { DefaultRunMode = RunMode.Async }));
         }
 
@@ -43,14 +46,27 @@ namespace FAQBot
             Console.WriteLine($"Fetched {_faq.Count} rows.");
             _client.Log += Log;
             var token = _config.GetValue<string>("DiscordToken");
-
             await _client.LoginAsync(TokenType.Bot, token);
             await _client.StartAsync();
             await _commands.InstallCommandsAsync();
             _client.MessageReceived += MessageReceived;
             _client.Ready += InitiateSlashCommands;
             _client.SlashCommandExecuted += SlashCommandExecuted;
+            _client.UserJoined += UserJoined;
             await Task.Delay(-1);
+        }
+
+        private async Task UserJoined(SocketGuildUser arg)
+        {
+            await arg.AddRoleAsync(ROLE_SCALLYWAG_ID);
+            var generalChannel = _client.GetGuild(PIRATES_GUILD_ID).GetChannel(GENERAL_CHANNEL_ID);
+            
+            await arg.Guild.DefaultChannel.SendMessageAsync(embed: new EmbedBuilder()
+            {
+                Title = $"YARGH SCALLYWAG!",
+                Description = $"Welcome to the open sea <@${arg.Id}>!\nKeep your limbs inside the boat or you might lose one, ahaha!\nBide your time and gather favour of the crew and you might even become Lackey one day, ahahah!\nBut i doubt it. To work SCALLYWAG!",
+                Color = Color.Red
+            }.Build());
         }
 
         private async Task MessageReceived(SocketMessage arg)
@@ -63,7 +79,7 @@ namespace FAQBot
 
             if (msg.Content.Contains(_client.CurrentUser.Mention.Replace("!", "")))
             {
-                await msg.ReplyAsync("This is a FAQ Bot! \n to know more execute the /faqhelp command");
+                await msg.ReplyAsync("Botswain takes commands from noone!\nUnless you use the right ones, try /botswainhelp");
             }
         }
 
@@ -73,7 +89,7 @@ namespace FAQBot
             {
                 switch (command.CommandName)
                 {
-                    case "faqhelp":
+                    case "botswainhelp":
                         await FAQHelpCommand(command);
                         break;
                     case "faq":
@@ -302,10 +318,10 @@ namespace FAQBot
         {
             var embed = new EmbedBuilder
             {
-                Title = $"Perilous Pirates FAQ Bot",
-                Description = $"The FAQ bot lists FAQ entries related to DeFi Kingdoms in a database.\n" +
+                Title = $"Botswain",
+                Description = $"Botswain can list FAQ entries and handle lackey approval requests.\n" +
                 $"FAQ entries get served to users through the /faq command.\n" +
-                $"Depending on what you enter with the command you get served a relevant FAQ entry to hopefully answer your questions."
+                $"To apply to be a Perilous Pirates Lackey use the /lackeyjoin command."
             };
             embed.AddField($"1", $"faq", true);
             embed.AddField($"2", $"faqhelp", true);
@@ -536,14 +552,19 @@ namespace FAQBot
         private async Task InitiateSlashCommands()
         {
             var piratesGuild = _client.GetGuild(940071768679395369);
+            var globalUser = _client.GetUser(_client.CurrentUser.Id);
+            var user = piratesGuild.GetUser(_client.CurrentUser.Id);
+            await user.ModifyAsync(x => {
+                x.Nickname = "Botswain";
+            });
             var commands = await _client.GetGlobalApplicationCommandsAsync();
             foreach(var command in commands)
             {
                 await command.DeleteAsync();
             }
             var guildCommand = new SlashCommandBuilder();
-            guildCommand.WithName("faqhelp");
-            guildCommand.WithDescription("What is the FAQ Bot?");
+            guildCommand.WithName("botswainhelp");
+            guildCommand.WithDescription("What is the Botswain?");
             guildCommand.AddOption("hidden", ApplicationCommandOptionType.Boolean, "Set False to show publicly. True by default.", false);
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
 
