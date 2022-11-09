@@ -76,7 +76,20 @@ namespace FAQBot
             {
                 return;
             }
-
+            if(msg.Content.ToLower().Contains("test"))
+            {
+                await msg.ReplyAsync("Testing are we? I see... LAND AHOY!");
+            }
+            if(msg.Content.ToLower().Contains("rum"))
+            {
+                await msg.ReplyAsync(embed: new EmbedBuilder()
+                {
+                    Title = "RUM!",
+                    Url = "https://www.privateerdragons.com/yohoho-bottleofrum.html",
+                    Description = "Fifteen men of 'em stiff and stark\r\nYo ho ho and a bottle of rum!\r\n\r\nTen of the crew had the murder mark!\r\nYo ho ho and a bottle of rum!",
+                    Color = Color.LightOrange
+                }.Build());
+            }
             if (msg.Content.Contains(_client.CurrentUser.Mention.Replace("!", "")))
             {
                 await msg.ReplyAsync("Botswain takes commands from noone!\nUnless you use the right ones, try /botswainhelp");
