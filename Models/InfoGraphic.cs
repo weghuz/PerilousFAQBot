@@ -13,7 +13,7 @@ namespace FAQBot.Models
             Tags = new();
         }
 
-        public InfoGraphic(string name, string link, string image, string description, List<IGTag> tags)
+        public InfoGraphic(string name, string link, string image, List<IGTag> tags)
         {
             Name = name;
             Image = image;

@@ -9,7 +9,7 @@ namespace FAQBot.Models
         private readonly IConfiguration _config;
 
         public DbSet<FAQEntry> FAQs { get; set; }
-        public DbSet<FAQTag> FAQsTags { get; set; }
+        public DbSet<IGTag> FAQsTags { get; set; }
         public DbSet<InfoGraphic> InfoGraphics { get; set; }
         public DbSet<IGTag> InfographicTags { get; set; }
         public DbSet<LackeyApplication> LackeyApplications { get; set; }

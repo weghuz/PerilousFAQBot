@@ -26,26 +26,20 @@ namespace FAQBot
         private const ulong ROLE_LACKEY_ID = 1038517985503100948;
         private const ulong ROLE_SCALLYWAG_ID = 940073182042411068;
         private const ulong PIRATES_GUILD_ID = 940071768679395369;
+        private const ulong AHOY_CHANNEL_ID = 1044929552587173939;
         private const ulong GENERAL_CHANNEL_ID = 940071768679395371;
         private const ulong PR_GENERAL_CHANNEL_ID = 1018925222449135718;
-        private List<FAQEntry> _faq;
 
         public FAQBot(IConfiguration config, FAQDB db)
         {
             _db = db;
             _config = config;
-            _faq = new();
             _client = new DiscordSocketClient(new DiscordSocketConfig { MessageCacheSize = 100, GatewayIntents = GatewayIntents.All });
             _commands = new CommandHandler(_client, new CommandService(new CommandServiceConfig() { DefaultRunMode = RunMode.Async }));
         }
 
         public async Task MainAsync(string[] args)
         {
-            Console.WriteLine("Fetching FAQ DB!");
-            _faq = await _db.FAQs
-                .Include(faq => faq.Tags)
-                .ToListAsync();
-            Console.WriteLine($"Fetched {_faq.Count} rows.");
             _client.Log += Log;
             var token = _config.GetValue<string>("DiscordToken");
             await _client.LoginAsync(TokenType.Bot, token);
@@ -61,7 +55,7 @@ namespace FAQBot
         private async Task UserJoined(SocketGuildUser arg)
         {
             await arg.AddRoleAsync(ROLE_SCALLYWAG_ID);
-            var generalChannel = _client.GetGuild(PIRATES_GUILD_ID).DefaultChannel;
+            var generalChannel = _client.GetGuild(PIRATES_GUILD_ID).GetTextChannel(AHOY_CHANNEL_ID);
             if (generalChannel is null)
             {
                 Console.WriteLine("Culdn't find General Text Channel");
@@ -189,58 +183,22 @@ namespace FAQBot
             }
         }
 
-        private Task IGEditTagCommand(SocketSlashCommand command)
-        {
-            throw new NotImplementedException();
-        }
 
-        private Task IGAddTagCommand(SocketSlashCommand command)
-        {
-            throw new NotImplementedException();
-        }
 
-        private Task IGEditCommand(SocketSlashCommand command)
-        {
-            throw new NotImplementedException();
-        }
 
-        private Task IGAddCommand(SocketSlashCommand command)
-        {
-            throw new NotImplementedException();
-        }
 
-        private Task IGListCommand(SocketSlashCommand command)
-        {
-            throw new NotImplementedException();
-        }
-
-        private Task IGCommand(SocketSlashCommand command)
-        {
-            throw new NotImplementedException();
-        }
-
-        private async Task CreateThreadCommand(SocketSlashCommand command)
-        {
-            var PRChannel = _client.GetGuild(PIRATES_GUILD_ID).GetTextChannel(PR_GENERAL_CHANNEL_ID);
-            await PRChannel.SendMessageAsync(
-                embed: new EmbedBuilder()
-                {
-                    Title = $"{command.User.Username} applied to be a Lackey",
-                    Description = $"The application for <@{command.User.Id}> will be open until <t:{(int)DateTime.Now.AddDays(1).Subtract(new DateTime(1970, 1, 1)).TotalSeconds}:R>\nDiscussion surrounding the application should be in the following thread."
-                }.Build());
-            await PRChannel.CreateThreadAsync($"{command.User.Username} Lackey Application", autoArchiveDuration: ThreadArchiveDuration.OneDay, invitable: false, type: ThreadType.PublicThread);
-            await command.RespondAsync("Thread Created");
-        }
 
         private async Task LackeyListCommand(SocketSlashCommand command)
         {
-            var embeds = new List<Embed>();
-            embeds.Add(new EmbedBuilder()
+            var embeds = new List<Embed>
             {
-                Title = $"Lackey applicants",
-                Description = $"Scallywags that applied to be approved for the role of Lackey.\nApplications have 24 hours to get approved by True Pirates.",
-                Color = Color.Blue
-            }.Build());
+                new EmbedBuilder()
+                {
+                    Title = $"Lackey applicants",
+                    Description = $"Scallywags that applied to be approved for the role of Lackey.\nApplications have 24 hours to get approved by True Pirates.",
+                    Color = Color.Blue
+                }.Build()
+            };
             var applications = await _db.LackeyApplications
                 .Include(app => app.Approvals)
                 .OrderByDescending(a => a.Id)
@@ -388,6 +346,27 @@ namespace FAQBot
             await PRChannel.CreateThreadAsync($"{command.User.Username} Lackey Application", autoArchiveDuration: ThreadArchiveDuration.OneDay, invitable: false, type: ThreadType.PublicThread);
         }
 
+        private async Task IGEditTagCommand(SocketSlashCommand command)
+        {
+            if (await IsTruePirateAsync(command) is false)
+                return;
+            if (int.TryParse(command.Data.Options.FirstOrDefault(op => op.Name == "id")?.Value.ToString(), out int tagId))
+            {
+                string tag = command.Data.Options.FirstOrDefault(op => op.Name == "tag")?.Value.ToString();
+                var oldTag = await _db.InfographicTags
+                    .Where(f => f.Id == tagId)
+                    .FirstOrDefaultAsync();
+                string oldTagTag = oldTag.Tag;
+                oldTag.Tag = tag;
+                await _db.SaveChangesAsync();
+                await command.RespondAsync($"Changed Tag #{tagId} from {oldTagTag} to {tag}.", ephemeral: IsCommandEphemeral(command.Data.Options));
+            }
+            else
+            {
+                await command.RespondAsync($"Couldn't find Infographic.", ephemeral: true);
+            }
+        }
+        
         private async Task FAQEditTagCommand(SocketSlashCommand command)
         {
             if (await IsTruePirateAsync(command) is false)
@@ -406,6 +385,27 @@ namespace FAQBot
             else
             {
                 await command.RespondAsync($"Couldn't find FAQ.", ephemeral: true);
+            }
+        }
+
+        private async Task IGAddTagCommand(SocketSlashCommand command)
+        {
+            if (await IsTruePirateAsync(command) is false)
+                return;
+            if (int.TryParse(command.Data.Options.FirstOrDefault(op => op.Name == "id")?.Value.ToString(), out int faqId))
+            {
+                string tag = command.Data.Options.FirstOrDefault(op => op.Name == "tag")?.Value.ToString();
+                var ig = await _db.InfoGraphics
+                    .Where(f => f.Id == faqId)
+                    .Include(f => f.Tags)
+                    .FirstOrDefaultAsync();
+                ig.Tags.Add(new IGTag() { Tag = tag });
+                await _db.SaveChangesAsync();
+                await command.RespondAsync($"Added Tag {tag} to Infographic #{ig.Id} {ig.Name}.", ephemeral: IsCommandEphemeral(command.Data.Options));
+            }
+            else
+            {
+                await command.RespondAsync($"Couldn't find Infographic.", ephemeral: true);
             }
         }
 
@@ -504,6 +504,66 @@ namespace FAQBot
             return allowed;
         }
 
+
+        private async Task IGEditCommand(SocketSlashCommand command)
+        {
+            if (await IsTruePirateAsync(command) is false)
+                return;
+            try
+            {
+                var subCommand = command.Data.Options.First();
+                string id = subCommand.Options.FirstOrDefault(op => op.Name == "id")?.Value.ToString();
+
+                var oldIg = await _db.InfoGraphics
+                    .Include(ig => ig.Tags)
+                    .FirstOrDefaultAsync(ig => ig.Id == int.Parse(id));
+                if (oldIg is null)
+                {
+                    await command.RespondAsync($"Couldn't find the Infographic with ID:{id}.\n", ephemeral: true);
+                }
+                switch (subCommand.Name)
+                {
+                    case "name":
+                        string name = subCommand.Options.FirstOrDefault(op => op.Name == "name")?.Value.ToString();
+                        var oldName = oldIg.Name;
+                        oldIg.Name = name;
+                        await _db.SaveChangesAsync();
+                        await command.RespondAsync($"Edited description of Infographic #{id} from {oldName} to {name}.", ephemeral: IsCommandEphemeral(subCommand.Options));
+                        break;
+                    case "link":
+                        string link = subCommand.Options.FirstOrDefault(op => op.Name == "link")?.Value.ToString();
+                        var oldLink = oldIg.Link;
+                        oldIg.Link = link;
+                        await _db.SaveChangesAsync();
+                        await command.RespondAsync($"Edited link of Infographic #{id} from {oldLink} to {link}.", ephemeral: IsCommandEphemeral(subCommand.Options));
+                        break;
+                    case "image":
+                        string image = subCommand.Options.FirstOrDefault(op => op.Name == "image")?.Value.ToString();
+                        var oldImage = oldIg.Image;
+                        oldIg.Image = image;
+                        await _db.SaveChangesAsync();
+                        await command.RespondAsync($"Edited Image of Infographic #{id} from {oldImage} to {image}.", ephemeral: IsCommandEphemeral(subCommand.Options));
+                        break;
+                    case "tags":
+                        string tags = subCommand.Options.FirstOrDefault(op => op.Name == "tags")?.Value.ToString();
+                        List<IGTag> IGTags = new();
+                        foreach (string tag in tags.Split(','))
+                        {
+                            IGTags.Add(new() { Tag = tag.Trim() });
+                        }
+                        oldIg.Tags = IGTags;
+                        await _db.SaveChangesAsync();
+                        await command.RespondAsync($"Removed old tags and added new tags of Infographic #{id}.", ephemeral: IsCommandEphemeral(command.Data.Options));
+                        break;
+                }
+            }
+            catch
+            {
+                await command.RespondAsync($"Tried to edit Infographic but failed.\n", ephemeral: true);
+                Console.WriteLine($"Tried to edit Infographic but failed.\n");
+            }
+        }
+
         private async Task FAQEditCommand(SocketSlashCommand command)
         {
             if (await IsTruePirateAsync(command) is false)
@@ -580,6 +640,39 @@ namespace FAQBot
             }
         }
 
+        private async Task IGAddCommand(SocketSlashCommand command)
+        {
+            if (await IsTruePirateAsync(command) is false)
+                return;
+            try
+            {
+                string name = command.Data.Options.FirstOrDefault(op => op.Name == "name")?.Value.ToString();
+                string image = command.Data.Options.FirstOrDefault(op => op.Name == "image")?.Value.ToString();
+                string link = command.Data.Options.FirstOrDefault(op => op.Name == "link")?.Value.ToString();
+                string tags = command.Data.Options.FirstOrDefault(op => op.Name == "tags")?.Value.ToString();
+                List<IGTag> IGTags = new();
+                foreach (string tag in tags.Split(','))
+                {
+                    IGTags.Add(new() { Tag = tag.Trim() });
+                }
+                var ig = new InfoGraphic(name, link, image, IGTags);
+                await _db.AddAsync(ig);
+                await _db.SaveChangesAsync();
+                var embed = new EmbedBuilder
+                {
+                    Title = $"Added Infographic #{ig.Id}: **[{ig.Name}]({ig.Link})**",
+                    ImageUrl = ig.Image,
+                    Url = ig.Link
+                };
+                await command.RespondAsync(embed: embed.Build(), ephemeral: IsCommandEphemeral(command.Data.Options));
+            }
+            catch
+            {
+                await command.RespondAsync($"Tried to Add FAQ but failed.\n", ephemeral: true);
+                Console.WriteLine($"Tried to Add FAQ but failed.\n");
+            }
+        }
+
         private async Task FAQAddCommand(SocketSlashCommand command)
         {
             if(await IsTruePirateAsync(command) is false)
@@ -606,7 +699,6 @@ namespace FAQBot
                     ImageUrl = faq.Image,
                 };
                 await command.RespondAsync(embed: embed.Build(), ephemeral: IsCommandEphemeral(command.Data.Options));
-                _faq.Add(faq);
             }
             catch
             {
@@ -615,13 +707,32 @@ namespace FAQBot
             }
         }
 
+        private async Task IGListCommand(SocketSlashCommand command)
+        {
+            var embed = new EmbedBuilder
+            {
+                Title = $"Available Infographic entries.",
+            };
+            foreach (InfoGraphic ig in await _db.InfoGraphics.ToListAsync())
+            {
+                StringBuilder tags = new();
+                foreach (IGTag tag in ig.Tags)
+                {
+                    tags.AppendLine($"{tag.Id}: {tag.Tag}");
+                }
+                embed.AddField($"{ig.Id}: {ig.Name}", $"Tags ({ig.Tags.Count})\n{tags}", true);
+
+            }
+            await command.RespondAsync(embed: embed.Build(), ephemeral: IsCommandEphemeral(command.Data.Options));
+        }
+
         private async Task FAQListCommand(SocketSlashCommand command)
         {
             var embed = new EmbedBuilder
             {
                 Title = $"Available FAQ entries.",
             };
-            foreach (FAQEntry faq in _faq)
+            foreach (FAQEntry faq in await _db.FAQs.ToListAsync())
             {
                 StringBuilder tags = new();
                 foreach (FAQTag tag in faq.Tags)
@@ -645,6 +756,34 @@ namespace FAQBot
             return sb.ToString();
         }
 
+        private async Task IGCommand(SocketSlashCommand command)
+        {
+            var data = command.Data.Options.FirstOrDefault(op => op.Name == "data")?.Value;
+            if (data is null)
+            {
+                return;
+            }
+            var faq = await _db.FAQs
+                .Include(faq => faq.Tags)
+                .FirstOrDefaultAsync(faq => faq.Tags.Any(tag => tag.Tag.ToLower().Contains(data.ToString()!.ToLower())));
+            if (faq is not null)
+            {
+                var embed = new EmbedBuilder
+                {
+                    Title = $"**{faq.Name}**",
+                    Description = $"{faq.Description}",
+                    ImageUrl = faq.Image,
+                    Color = Color.Blue,
+                    Url = faq.Link
+                };
+                await command.RespondAsync(embed: embed.Build(), ephemeral: IsCommandEphemeral(command.Data.Options));
+            }
+            else
+            {
+                await command.RespondAsync($"FAQ entry not found!", ephemeral: true);
+            }
+        }
+
         private async Task FAQCommand(SocketSlashCommand command)
         {
             var data = command.Data.Options.FirstOrDefault(op => op.Name == "data")?.Value;
@@ -652,7 +791,9 @@ namespace FAQBot
             {
                 return;
             }
-            var faq = _faq.FirstOrDefault(faq => faq.Tags.Any(tag => tag.Tag.ToLower().Contains(data.ToString()!.ToLower())));
+            var faq = await _db.FAQs
+                .Include(faq => faq.Tags)
+                .FirstOrDefaultAsync(faq => faq.Tags.Any(tag => tag.Tag.ToLower().Contains(data.ToString()!.ToLower())));
             if (faq is not null)
             {
                 var embed = new EmbedBuilder
@@ -729,6 +870,19 @@ namespace FAQBot
             guildCommand.AddOption("data", ApplicationCommandOptionType.String, "The data to look for in the FAQ database.", true);
             guildCommand.AddOption("hidden", ApplicationCommandOptionType.Boolean, "Set False to show publicly. True by default.", false);
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+            
+            guildCommand = new SlashCommandBuilder();
+            guildCommand.WithName("iglist");
+            guildCommand.WithDescription("List all InfoGraphics.");
+            guildCommand.AddOption("hidden", ApplicationCommandOptionType.Boolean, "Set False to show publicly. True by default.", false);
+            await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+
+            guildCommand = new SlashCommandBuilder();
+            guildCommand.WithName("ig");
+            guildCommand.WithDescription("Search Infographics with a tag.");
+            guildCommand.AddOption("data", ApplicationCommandOptionType.String, "The data to look for in the infographics database.", true);
+            guildCommand.AddOption("hidden", ApplicationCommandOptionType.Boolean, "Set False to show publicly. True by default.", false);
+            await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
 
             guildCommand = new SlashCommandBuilder();
             guildCommand.WithName("faqadd");
@@ -781,6 +935,49 @@ namespace FAQBot
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
 
             guildCommand = new SlashCommandBuilder();
+            guildCommand.WithName("igadd");
+            guildCommand.WithDescription("(TRUE PIRATE) Add a new infographic entry.");
+            guildCommand.AddOptions(new SlashCommandOptionBuilder[]
+            {
+                new()
+                {
+                    Name = "name",
+                    Description = "The name of the infographic.",
+                    Type = ApplicationCommandOptionType.String,
+                    IsRequired = true,
+                },
+                new()
+                {
+                    Name = "link",
+                    Description = "A link to elaborate on the infographic.",
+                    Type = ApplicationCommandOptionType.String,
+                    IsRequired = false,
+                },
+                new()
+                {
+                    Name = "image",
+                    Description = "A URI to an image for the infographic.",
+                    Type = ApplicationCommandOptionType.String,
+                    IsRequired = false,
+                },
+                new()
+                {
+                    Name = "tags",
+                    Description = "Comma separated tags for example: \"Hero, Heroes, Class\"",
+                    Type = ApplicationCommandOptionType.String,
+                    IsRequired = true,
+                },
+                new()
+                {
+                    Name = "hidden",
+                    Description = "Set False to show publicly. True by default.",
+                    Type = ApplicationCommandOptionType.Boolean,
+                    IsRequired = false,
+                }
+            });
+            await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+
+            guildCommand = new SlashCommandBuilder();
             guildCommand.WithName("faqaddtag");
             guildCommand.WithDescription("(TRUE PIRATE) Add a FAQ Tag.");
             guildCommand.AddOptions(new SlashCommandOptionBuilder[]
@@ -810,6 +1007,35 @@ namespace FAQBot
             await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
 
             guildCommand = new SlashCommandBuilder();
+            guildCommand.WithName("igaddtag");
+            guildCommand.WithDescription("(TRUE PIRATE) Add a tag to an infographic.");
+            guildCommand.AddOptions(new SlashCommandOptionBuilder[]
+            {
+                new()
+                {
+                    Name = "id",
+                    Description = "Id of the infographic to add a TAG to.",
+                    Type = ApplicationCommandOptionType.Integer,
+                    IsRequired = true,
+                },
+                new()
+                {
+                    Name = "tag",
+                    Description = "The tag to add.",
+                    Type = ApplicationCommandOptionType.String,
+                    IsRequired = true,
+                },
+                new()
+                {
+                    Name = "hidden",
+                    Description = "Set False to show publicly. True by default.",
+                    Type = ApplicationCommandOptionType.Boolean,
+                    IsRequired = false,
+                }
+            });
+            await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+
+            guildCommand = new SlashCommandBuilder();
             guildCommand.WithName("faqedittag");
             guildCommand.WithDescription("(TRUE PIRATE) Edit a FAQ Tag.");
             guildCommand.AddOptions(new SlashCommandOptionBuilder[]
@@ -818,6 +1044,35 @@ namespace FAQBot
                 {
                     Name = "id",
                     Description = "Id of the FAQ to edit.",
+                    Type = ApplicationCommandOptionType.Integer,
+                    IsRequired = true,
+                },
+                new()
+                {
+                    Name = "tag",
+                    Description = "The new tag.",
+                    Type = ApplicationCommandOptionType.String,
+                    IsRequired = true,
+                },
+                new()
+                {
+                    Name = "hidden",
+                    Description = "Set False to show publicly. True by default.",
+                    Type = ApplicationCommandOptionType.Boolean,
+                    IsRequired = false,
+                }
+            });
+            await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+
+            guildCommand = new SlashCommandBuilder();
+            guildCommand.WithName("igedittag");
+            guildCommand.WithDescription("(TRUE PIRATE) Edit an infographic tag.");
+            guildCommand.AddOptions(new SlashCommandOptionBuilder[]
+            {
+                new()
+                {
+                    Name = "id",
+                    Description = "Id of the infographic to edit.",
                     Type = ApplicationCommandOptionType.Integer,
                     IsRequired = true,
                 },
@@ -981,6 +1236,134 @@ namespace FAQBot
                         {
                             Name = "tags",
                             Description = "The tags to replace the FAQs tags with.",
+                            Type = ApplicationCommandOptionType.String,
+                            IsRequired = true
+                        },
+                        new()
+                        {
+                            Name = "hidden",
+                            Description = "Set False to show publicly. True by default.",
+                            Type = ApplicationCommandOptionType.Boolean,
+                            IsRequired = false,
+                        }
+                    }
+                }
+            });
+            await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+            
+            guildCommand = new SlashCommandBuilder();
+            guildCommand.WithName("igedit");
+            guildCommand.WithDescription("(TRUE PIRATE) Edit an infographic.");
+            guildCommand.AddOptions(new SlashCommandOptionBuilder[]
+            {
+                new()
+                {
+                    Name = "name",
+                    Description = "Change the name of the infographic.",
+                    Type = ApplicationCommandOptionType.SubCommand,
+                    Options = new List<SlashCommandOptionBuilder>
+                    {
+                        new()
+                        {
+                            Name = "id",
+                            Description = "Id of the infographic to edit.",
+                            Type = ApplicationCommandOptionType.Integer,
+                            IsRequired = true,
+                        },
+                        new()
+                        {
+                            Name = "name",
+                            Description = "The name to change to.",
+                            Type = ApplicationCommandOptionType.String,
+                            IsRequired = true
+                        },
+                        new()
+                        {
+                            Name = "hidden",
+                            Description = "Set False to show publicly. True by default.",
+                            Type = ApplicationCommandOptionType.Boolean,
+                            IsRequired = false,
+                        }
+                    }
+                },
+                new()
+                {
+                    Name = "link",
+                    Description = "Change the link of the infographic.",
+                    Type = ApplicationCommandOptionType.SubCommand,
+                    Options = new List<SlashCommandOptionBuilder>
+                    {
+                        new()
+                        {
+                            Name = "id",
+                            Description = "Id of the infographic to edit.",
+                            Type = ApplicationCommandOptionType.Integer,
+                            IsRequired = true,
+                        },
+                        new()
+                        {
+                            Name = "link",
+                            Description = "The Description to change to.",
+                            Type = ApplicationCommandOptionType.String,
+                            IsRequired = true
+                        },
+                        new()
+                        {
+                            Name = "hidden",
+                            Description = "Set False to show publicly. True by default.",
+                            Type = ApplicationCommandOptionType.Boolean,
+                            IsRequired = false,
+                        }
+                    }
+                },
+                new()
+                {
+                    Name = "image",
+                    Description = "Change the URI to the infographic Image.",
+                    Type = ApplicationCommandOptionType.SubCommand,
+                    Options = new List<SlashCommandOptionBuilder>
+                    {
+                        new()
+                        {
+                            Name = "id",
+                            Description = "Id of the FAQ to edit.",
+                            Type = ApplicationCommandOptionType.Integer,
+                            IsRequired = true,
+                        },
+                        new()
+                        {
+                            Name = "image",
+                            Description = "The image URI to change to.",
+                            Type = ApplicationCommandOptionType.String,
+                            IsRequired = true
+                        },
+                        new()
+                        {
+                            Name = "hidden",
+                            Description = "Set False to show publicly. True by default.",
+                            Type = ApplicationCommandOptionType.Boolean,
+                            IsRequired = false,
+                        }
+                    }
+                },
+                new()
+                {
+                    Name = "tags",
+                    Description = "Change the tags for an infographic.",
+                    Type = ApplicationCommandOptionType.SubCommand,
+                    Options = new List<SlashCommandOptionBuilder>
+                    {
+                        new()
+                        {
+                            Name = "id",
+                            Description = "Id of the infographic to edit.",
+                            Type = ApplicationCommandOptionType.Integer,
+                            IsRequired = true,
+                        },
+                        new()
+                        {
+                            Name = "tags",
+                            Description = "The tags to replace the infographics tags with.",
                             Type = ApplicationCommandOptionType.String,
                             IsRequired = true
                         },
