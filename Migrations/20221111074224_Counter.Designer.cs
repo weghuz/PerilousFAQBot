@@ -3,6 +3,7 @@ using System;
 using FAQBot.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FAQBot.Migrations
 {
     [DbContext(typeof(FAQDB))]
-    partial class FAQDBModelSnapshot : ModelSnapshot
+    [Migration("20221111074224_Counter")]
+    partial class Counter
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -87,52 +89,6 @@ namespace FAQBot.Migrations
                     b.ToTable("FAQsTags");
                 });
 
-            modelBuilder.Entity("FAQBot.Models.IGTag", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("InfoGraphicId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Tag")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("InfoGraphicId");
-
-                    b.ToTable("InfographicTags");
-                });
-
-            modelBuilder.Entity("FAQBot.Models.InfoGraphic", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Image")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Link")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Name")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("TimeStamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("InfoGraphics");
-                });
-
             modelBuilder.Entity("FAQBot.Models.LackeyApplication", b =>
                 {
                     b.Property<int>("Id")
@@ -187,17 +143,6 @@ namespace FAQBot.Migrations
                     b.Navigation("FAQEntry");
                 });
 
-            modelBuilder.Entity("FAQBot.Models.IGTag", b =>
-                {
-                    b.HasOne("FAQBot.Models.InfoGraphic", "InfoGraphic")
-                        .WithMany("Tags")
-                        .HasForeignKey("InfoGraphicId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("InfoGraphic");
-                });
-
             modelBuilder.Entity("FAQBot.Models.LackeyApproval", b =>
                 {
                     b.HasOne("FAQBot.Models.LackeyApplication", "Application")
@@ -210,11 +155,6 @@ namespace FAQBot.Migrations
                 });
 
             modelBuilder.Entity("FAQBot.Models.FAQEntry", b =>
-                {
-                    b.Navigation("Tags");
-                });
-
-            modelBuilder.Entity("FAQBot.Models.InfoGraphic", b =>
                 {
                     b.Navigation("Tags");
                 });

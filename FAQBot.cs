@@ -12,6 +12,7 @@ using static System.Net.Mime.MediaTypeNames;
 using System.Reactive.Disposables;
 using System.Reflection.Metadata.Ecma335;
 using System;
+using System.ComponentModel;
 
 namespace FAQBot
 {
@@ -26,6 +27,7 @@ namespace FAQBot
         private const ulong ROLE_SCALLYWAG_ID = 940073182042411068;
         private const ulong PIRATES_GUILD_ID = 940071768679395369;
         private const ulong GENERAL_CHANNEL_ID = 940071768679395371;
+        private const ulong PR_GENERAL_CHANNEL_ID = 1018925222449135718;
         private List<FAQEntry> _faq;
 
         public FAQBot(IConfiguration config, FAQDB db)
@@ -59,12 +61,16 @@ namespace FAQBot
         private async Task UserJoined(SocketGuildUser arg)
         {
             await arg.AddRoleAsync(ROLE_SCALLYWAG_ID);
-            var generalChannel = _client.GetGuild(PIRATES_GUILD_ID).GetChannel(GENERAL_CHANNEL_ID);
-            
-            await arg.Guild.DefaultChannel.SendMessageAsync(embed: new EmbedBuilder()
+            var generalChannel = _client.GetGuild(PIRATES_GUILD_ID).DefaultChannel;
+            if (generalChannel is null)
+            {
+                Console.WriteLine("Culdn't find General Text Channel");
+                return;
+            }
+            await generalChannel.SendMessageAsync(embed: new EmbedBuilder()
             {
                 Title = $"YARGH SCALLYWAG!",
-                Description = $"Welcome to the open sea <@${arg.Id}>!\nKeep your limbs inside the boat or you might lose one, ahaha!\nBide your time and gather favour of the crew and you might even become Lackey one day, ahahah!\nBut i doubt it. To work SCALLYWAG!",
+                Description = $"Welcome to the open sea <@{arg.Id}>!\nKeep your limbs inside the boat or you might lose one, ahaha!\nBide your time and gather favour of the crew and you might even become Lackey one day, ahahah!\nBut i doubt it. To work SCALLYWAG!",
                 Color = Color.Red
             }.Build());
         }
@@ -76,23 +82,42 @@ namespace FAQBot
             {
                 return;
             }
-            if(msg.Content.ToLower().Contains("test"))
-            {
-                await msg.ReplyAsync("Testing are we? I see... LAND AHOY!");
-            }
-            if(msg.Content.ToLower().Contains("rum"))
-            {
-                await msg.ReplyAsync(embed: new EmbedBuilder()
-                {
-                    Title = "RUM!",
-                    Url = "https://www.privateerdragons.com/yohoho-bottleofrum.html",
-                    Description = "Fifteen men of 'em stiff and stark\r\nYo ho ho and a bottle of rum!\r\n\r\nTen of the crew had the murder mark!\r\nYo ho ho and a bottle of rum!",
-                    Color = Color.LightOrange
-                }.Build());
-            }
             if (msg.Content.Contains(_client.CurrentUser.Mention.Replace("!", "")))
             {
-                await msg.ReplyAsync("Botswain takes commands from noone!\nUnless you use the right ones, try /botswainhelp");
+                if (msg.Content.ToLower().Contains("pirate"))
+                {
+                    Counter pirateCounter = await _db.Counters
+                        .Where(c => c.Id == 1)
+                        .FirstOrDefaultAsync();
+                    pirateCounter.Count++;
+                    Embed embed = new EmbedBuilder()
+                    {
+                        Title = $"Pirate {pirateCounter.Count}!",
+                        Description = $"Yar har har, the word Pirate has been uttered a mere {pirateCounter.Count} times.\n Step up!",
+                        ImageUrl = $"https://cdn.discordapp.com/attachments/940071768679395371/1040252193502134282/NomadicOne_a_yellow_Lego_pirate_holding_a_cutlass_looks_out_ove_c9661df7-70d1-45fa-8a42-e2607abb3865.png",
+                        Color = Color.Teal
+                    }.Build();
+                    await msg.ReplyAsync(embed: embed);
+                    await _db.SaveChangesAsync();
+                }
+                else if (msg.Content.ToLower().Contains("test"))
+                {
+                    await msg.ReplyAsync("Testing are we? I see... LAND AHOY!");
+                }
+                else if (msg.Content.ToLower().Contains("rum"))
+                {
+                    await msg.ReplyAsync(embed: new EmbedBuilder()
+                    {
+                        Title = "RUM!",
+                        Url = "https://www.privateerdragons.com/yohoho-bottleofrum.html",
+                        Description = "Fifteen men of 'em stiff and stark\r\nYo ho ho and a bottle of rum!\r\n\r\nTen of the crew had the murder mark!\r\nYo ho ho and a bottle of rum!",
+                        Color = Color.LightOrange
+                    }.Build());
+                }
+                else
+                {
+                    await msg.ReplyAsync("Botswain takes commands from noone!\nUnless you use the right ones, try /botswainhelp");
+                }
             }
         }
 
@@ -102,6 +127,9 @@ namespace FAQBot
             {
                 switch (command.CommandName)
                 {
+                    //case "createthread":
+                    //    await CreateThreadCommand(command);
+                    //    break;
                     case "botswainhelp":
                         await FAQHelpCommand(command);
                         break;
@@ -110,6 +138,12 @@ namespace FAQBot
                         break;
                     case "faqlist":
                         await FAQListCommand(command);
+                        break;
+                    case "ig":
+                        await IGCommand(command);
+                        break;
+                    case "iglist":
+                        await IGListCommand(command);
                         break;
                     case "faqadd":
                         await FAQAddCommand(command);
@@ -122,6 +156,18 @@ namespace FAQBot
                         break;
                     case "faqedittag":
                         await FAQEditTagCommand(command);
+                        break;
+                    case "igadd":
+                        await IGAddCommand(command);
+                        break;
+                    case "igedit":
+                        await IGEditCommand(command);
+                        break;
+                    case "igaddtag":
+                        await IGAddTagCommand(command);
+                        break;
+                    case "igedittag":
+                        await IGEditTagCommand(command);
                         break;
                     case "lackeyjoin":
                         await LackeyJoinCommand(command);
@@ -143,6 +189,49 @@ namespace FAQBot
             }
         }
 
+        private Task IGEditTagCommand(SocketSlashCommand command)
+        {
+            throw new NotImplementedException();
+        }
+
+        private Task IGAddTagCommand(SocketSlashCommand command)
+        {
+            throw new NotImplementedException();
+        }
+
+        private Task IGEditCommand(SocketSlashCommand command)
+        {
+            throw new NotImplementedException();
+        }
+
+        private Task IGAddCommand(SocketSlashCommand command)
+        {
+            throw new NotImplementedException();
+        }
+
+        private Task IGListCommand(SocketSlashCommand command)
+        {
+            throw new NotImplementedException();
+        }
+
+        private Task IGCommand(SocketSlashCommand command)
+        {
+            throw new NotImplementedException();
+        }
+
+        private async Task CreateThreadCommand(SocketSlashCommand command)
+        {
+            var PRChannel = _client.GetGuild(PIRATES_GUILD_ID).GetTextChannel(PR_GENERAL_CHANNEL_ID);
+            await PRChannel.SendMessageAsync(
+                embed: new EmbedBuilder()
+                {
+                    Title = $"{command.User.Username} applied to be a Lackey",
+                    Description = $"The application for <@{command.User.Id}> will be open until <t:{(int)DateTime.Now.AddDays(1).Subtract(new DateTime(1970, 1, 1)).TotalSeconds}:R>\nDiscussion surrounding the application should be in the following thread."
+                }.Build());
+            await PRChannel.CreateThreadAsync($"{command.User.Username} Lackey Application", autoArchiveDuration: ThreadArchiveDuration.OneDay, invitable: false, type: ThreadType.PublicThread);
+            await command.RespondAsync("Thread Created");
+        }
+
         private async Task LackeyListCommand(SocketSlashCommand command)
         {
             var embeds = new List<Embed>();
@@ -154,7 +243,10 @@ namespace FAQBot
             }.Build());
             var applications = await _db.LackeyApplications
                 .Include(app => app.Approvals)
+                .OrderByDescending(a => a.Id)
+                .Take(9)
                 .ToListAsync();
+            applications.Reverse();
             bool old = false;
             if (command.Data.Options.FirstOrDefault(op => op.Name == "old")?.Value is not null)
                 old = bool.Parse(command.Data.Options.FirstOrDefault(op => op.Name == "old")?.Value.ToString());
@@ -183,7 +275,8 @@ namespace FAQBot
 
         private static bool IsLackeyApplicationApproved(LackeyApplication app)
         {
-            return app.Approvals.Where(a => a.TimeStamp >= app.ApplicationTime.AddDays(-1)).Count() > 3;
+            var approvals = app.Approvals.Where(a => a.TimeStamp.Ticks <= app.ApplicationTime.AddDays(1).Ticks);
+            return approvals.Count() >= 3;
         }
 
         private async Task LackeyApproveCommand(SocketSlashCommand command)
@@ -224,12 +317,14 @@ namespace FAQBot
                         Description = $"<@{command.User.Id}> approved of <@{application.ApplicantId}>!",
                         Color = Color.Green
                     }.Build()
-                    
                 };
                 if(IsLackeyApplicationApproved(application))
                 {
                     var guildApplicant = (await _client.GetUserAsync(application.ApplicantId) as IGuildUser);
-                    await guildApplicant.AddRoleAsync(ROLE_LACKEY_ID);
+                    if(guildApplicant is not null)
+                    {
+                        await guildApplicant.AddRoleAsync(ROLE_LACKEY_ID);
+                    }
                     embeds.Add(new EmbedBuilder()
                     {
                         Title = $"Welcome to the Lackeys <@{application.ApplicantId}>",
@@ -242,7 +337,7 @@ namespace FAQBot
                     embeds.Add(new EmbedBuilder()
                     {
                         Title = $"#{application.Id} {(IsLackeyApplicationApproved(application) ? "Approved!" : IsLackeyApplicationPending(application) ? $"Pending approval, closing <t:{(int)application.ApplicationTime.AddDays(1).Subtract(new DateTime(1970, 1, 1)).TotalSeconds}:R>!" : "Unapproved!")}",
-                        Description = $"Applicant: <@{application.ApplicantId}>\nApprovals: {application.Approvals.Count}/3\nApproved by {application.Approvals}",
+                        Description = $"Applicant: <@{application.ApplicantId}>\nApprovals: {application.Approvals.Count}/3\nApproved by {string.Join(", ", application.Approvals.Select(a => $"<@{a.ApproverId}>"))}",
                         Color = (IsLackeyApplicationApproved(application) ? Color.Green : IsLackeyApplicationPending(application) ? Color.Blue : Color.Red)
                     }.Build());
                 }
@@ -258,7 +353,7 @@ namespace FAQBot
         private async Task LackeyJoinCommand(SocketSlashCommand command)
         {
             var prevApp = await _db.LackeyApplications.Where(app => app.ApplicantId == command.User.Id).OrderBy(app => app.Id).LastOrDefaultAsync();
-            if (prevApp is not null && prevApp.ApplicationTime <= DateTime.UtcNow.AddDays(-7))
+            if (prevApp is not null && prevApp.ApplicationTime >= DateTime.UtcNow.AddDays(-7))
             {
                 await command.RespondAsync($"You've already applied to be a lackey in the past week.");
                 return;
@@ -268,11 +363,12 @@ namespace FAQBot
                 await command.RespondAsync($"You're already in, dummy!");
                 return;
             }
-            await _db.LackeyApplications.AddAsync(new()
+            LackeyApplication application = new()
             {
                 ApplicantId = command.User.Id,
                 ApplicationTime = DateTime.UtcNow
-            });
+            };
+            await _db.LackeyApplications.AddAsync(application);
             Embed embed = new EmbedBuilder()
             {
                 Timestamp = DateTime.UtcNow,
@@ -282,7 +378,14 @@ namespace FAQBot
             }.Build();
             await _db.SaveChangesAsync();
             await command.RespondAsync(embed: embed);
-
+            var PRChannel = _client.GetGuild(PIRATES_GUILD_ID).GetTextChannel(PR_GENERAL_CHANNEL_ID);
+            await PRChannel.SendMessageAsync(
+                embed: new EmbedBuilder()
+                {
+                    Title = $"{command.User.Username} applied to be a Lackey",
+                    Description = $"The application for <@{application.ApplicantId}> will be open until <t:{(int)application.ApplicationTime.AddDays(1).Subtract(new DateTime(1970, 1, 1)).TotalSeconds}:R>\nDiscussion surrounding the application should be in the following thread."
+                }.Build());
+            await PRChannel.CreateThreadAsync($"{command.User.Username} Lackey Application", autoArchiveDuration: ThreadArchiveDuration.OneDay, invitable: false, type: ThreadType.PublicThread);
         }
 
         private async Task FAQEditTagCommand(SocketSlashCommand command)
@@ -310,7 +413,7 @@ namespace FAQBot
         {
             if (await IsTruePirateAsync(command) is false)
                 return;
-            if(int.TryParse(command.Data.Options.FirstOrDefault(op => op.Name == "id")?.Value.ToString(), out int faqId))
+            if (int.TryParse(command.Data.Options.FirstOrDefault(op => op.Name == "id")?.Value.ToString(), out int faqId))
             {
                 string tag = command.Data.Options.FirstOrDefault(op => op.Name == "tag")?.Value.ToString();
                 var faq = await _db.FAQs
@@ -336,15 +439,21 @@ namespace FAQBot
                 $"FAQ entries get served to users through the /faq command.\n" +
                 $"To apply to be a Perilous Pirates Lackey use the /lackeyjoin command."
             };
-            embed.AddField($"1", $"faq", true);
-            embed.AddField($"2", $"faqhelp", true);
-            embed.AddField($"3", $"faqhelp", true);
+            embed.AddField($"1", $"botswainhelp", true);
+            embed.AddField($"2", $"faq", true);
+            embed.AddField($"3", $"faqlist", true);
+            embed.AddField($"2", $"ig", true);
+            embed.AddField($"3", $"iglist", true);
             embed.AddField($"4", $"lackeyjoin", true);
             embed.AddField($"5", $"lackeylist", true);
             embed.AddField($"10 (TRUE PIRATE)", $"faqadd", true);
             embed.AddField($"11 (TRUE PIRATE)", $"faqedit", true);
             embed.AddField($"12 (TRUE PIRATE)", $"faqaddtag", true);
             embed.AddField($"13 (TRUE PIRATE)", $"faqedittag", true);
+            embed.AddField($"10 (TRUE PIRATE)", $"igadd", true);
+            embed.AddField($"11 (TRUE PIRATE)", $"igedit", true);
+            embed.AddField($"12 (TRUE PIRATE)", $"igaddtag", true);
+            embed.AddField($"13 (TRUE PIRATE)", $"igedittag", true);
             embed.AddField($"15 (TRUE PIRATE)", $"lackeyapprove", true);
 
             await command.RespondAsync(embed: embed.Build(), ephemeral: IsCommandEphemeral(command.Data.Options));
@@ -575,6 +684,14 @@ namespace FAQBot
             {
                 await command.DeleteAsync();
             }
+
+            //var guildCommand = new SlashCommandBuilder();
+            //guildCommand.WithName("createthread");
+            //guildCommand.WithDescription("Create thread with name");
+            //guildCommand.AddOption("hidden", ApplicationCommandOptionType.Boolean, "Set False to show publicly. True by default.", false);
+            //guildCommand.AddOption("name", ApplicationCommandOptionType.String, "Thread name.", false);
+            //await piratesGuild.CreateApplicationCommandAsync(guildCommand.Build());
+
             var guildCommand = new SlashCommandBuilder();
             guildCommand.WithName("botswainhelp");
             guildCommand.WithDescription("What is the Botswain?");
